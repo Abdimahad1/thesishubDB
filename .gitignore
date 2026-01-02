@@ -1,2 +1,3 @@
+.env
+.env.*
 src/firebase/serviceAccount.json
-# Ignore Firebase service account file
