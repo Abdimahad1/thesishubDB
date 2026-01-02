@@ -2,12 +2,14 @@
  * ============================================================
  *  MAIN SERVER ENTRY POINT – ThesisHub Backend
  * ============================================================
- * - Loads environment variables FIRST
+ * - Loads environment variables FIRST (dev only)
  * - Initializes Express app
- * - Connects to MongoDB
+ * - Applies security & performance middlewares
  * - Registers all API routes
- * - Handles global errors
- * - SAFE for Render production
+ * - Health check for Render
+ * - Global error handling
+ * - MongoDB connection + graceful shutdown
+ * - SAFE for Render (Free & Paid)
  * ============================================================
  */
 
@@ -15,7 +17,10 @@
    ENV CONFIG (🔥 MUST BE FIRST)
 ========================= */
 import dotenv from "dotenv";
-dotenv.config(); // Safe for local & Render
+
+if (process.env.NODE_ENV !== "production") {
+  dotenv.config();
+}
 
 /* =========================
    CORE IMPORTS
@@ -23,6 +28,9 @@ dotenv.config(); // Safe for local & Render
 import express from "express";
 import cors from "cors";
 import mongoose from "mongoose";
+import helmet from "helmet";
+import morgan from "morgan";
+import rateLimit from "express-rate-limit";
 
 /* =========================
    ROUTE IMPORTS
@@ -64,8 +72,16 @@ const app = express();
 const isProduction = process.env.NODE_ENV === "production";
 
 /* =========================
-   MIDDLEWARES
+   TRUST PROXY (REQUIRED FOR RENDER)
 ========================= */
+app.set("trust proxy", 1);
+
+/* =========================
+   SECURITY MIDDLEWARES
+========================= */
+
+// 🛡 Security headers
+app.use(helmet());
 
 // 🌍 Secure CORS
 const allowedOrigins = process.env.ALLOWED_ORIGINS
@@ -79,8 +95,38 @@ app.use(
   })
 );
 
+// 🚦 Global rate limiting (SAFE for Render Free)
+app.use(
+  rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: 300, // per IP
+    standardHeaders: true,
+    legacyHeaders: false,
+  })
+);
+
+// 🔐 Stricter rate limit for auth routes
+app.use(
+  "/api/auth",
+  rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: 50,
+  })
+);
+
+/* =========================
+   PERFORMANCE MIDDLEWARES
+========================= */
+
 // 📦 Parse JSON bodies
 app.use(express.json({ limit: "10mb" }));
+
+// 🧾 Request logging (Render-friendly)
+if (!isProduction) {
+  app.use(morgan("dev"));
+} else {
+  app.use(morgan("combined"));
+}
 
 /* =========================
    API ROUTES
@@ -111,10 +157,10 @@ app.use("/api/admin/users", adminUsersRoutes);
 app.use("/api/firebase", firebaseRoutes);
 
 /* =========================
-   HEALTH CHECK
+   HEALTH CHECK (RENDER)
 ========================= */
 app.get("/health", (req, res) => {
-  res.json({
+  res.status(200).json({
     status: "OK",
     uptime: process.uptime(),
     environment: isProduction ? "production" : "development",
@@ -143,12 +189,25 @@ mongoose
   .then(() => {
     console.log("✅ MongoDB connected");
 
-    app.listen(PORT, () => {
+    const server = app.listen(PORT, () => {
       console.log(
         `🚀 ThesisHub Backend running on ${
           isProduction ? "Render" : "localhost"
         } port ${PORT}`
       );
+    });
+
+    /* =========================
+       GRACEFUL SHUTDOWN (RENDER)
+    ========================= */
+    process.on("SIGTERM", () => {
+      console.log("🛑 SIGTERM received. Shutting down...");
+      server.close(() => {
+        mongoose.connection.close(false, () => {
+          console.log("🧠 MongoDB disconnected");
+          process.exit(0);
+        });
+      });
     });
   })
   .catch((err) => {
