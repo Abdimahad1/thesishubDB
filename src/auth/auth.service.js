@@ -113,15 +113,20 @@ export const googleAuthUser = async (tokenId) => {
   let user = await User.findOne({ email });
 
   // ✅ Auto-register ONLY if user does not exist
-  if (!user) {
-    user = await User.create({
-      name,
-      email,
-      googleId: sub,
-      authProvider: "google",
-      // role defaults from schema
-    });
-  }
+    if (!user) {
+      const isInitialAdmin =
+        process.env.INITIAL_ADMIN_EMAIL &&
+        email.toLowerCase() === process.env.INITIAL_ADMIN_EMAIL.toLowerCase();
+
+      user = await User.create({
+        name,
+        email,
+        googleId: sub,
+        authProvider: "google",
+        role: isInitialAdmin ? "admin" : "student",
+      });
+    }
+
 
   // ✅ KEEP EXISTING ROLE (admin stays admin)
   const token = signToken(user);
