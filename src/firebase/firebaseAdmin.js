@@ -1,22 +1,11 @@
 import admin from "firebase-admin";
-import path from "path";
-import { fileURLToPath } from "url";
-import fs from "fs";
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-
-const serviceAccountPath = path.join(
-  __dirname,
-  "serviceAccount.json"
-);
-
-if (!fs.existsSync(serviceAccountPath)) {
-  throw new Error("❌ Firebase serviceAccount.json missing");
+if (!process.env.FIREBASE_SERVICE_ACCOUNT) {
+  throw new Error("❌ FIREBASE_SERVICE_ACCOUNT env variable is missing");
 }
 
 const serviceAccount = JSON.parse(
-  fs.readFileSync(serviceAccountPath, "utf-8")
+  process.env.FIREBASE_SERVICE_ACCOUNT
 );
 
 if (!admin.apps.length) {
